@@ -2,20 +2,29 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/joho/godotenv"
 )
 
-const host = "http://localhost:5102/"
+// const host = "http://localhost:5102/"
+const host = "https://api.innobyte.dev/"
 
 func main() {
 
 	app := fiber.New()
+
+	err := godotenv.Load()
+	if err != nil {
+		return
+	}
 
 	app.Get("/:key/:projectid/:endpointURL", func(c *fiber.Ctx) error {
 
@@ -409,37 +418,48 @@ func apiRequest(url string, method string, body []byte) (map[string]interface{},
 	var mapJsonResponse []map[string]interface{}
 	var response *http.Response
 	var err error
-	if method == "POST" {
-		//"application/json"
-		response, err = http.Post(url, "application/json", bytes.NewBuffer(body))
-	} else if method == "GET" {
+	user := os.Getenv("API_USER")
+	passwd := os.Getenv("API_PASSWORD")
+	auth := user + ":" + passwd
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 
-		response, err = http.Get(url)
+	var req *http.Request
+
+	if body != nil && len(body) > 0 {
+		req, err = http.NewRequest(method, url, bytes.NewBuffer(body))
+	} else {
+		req, err = http.NewRequest(method, url, nil) // Sin cuerpo
 	}
+
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Content-Type", "application/json") // Asegúrate de establecer el tipo de contenido
+
+	// Realiza la solicitud
+	client := &http.Client{}
+	response, err = client.Do(req)
 
 	if err != nil {
-
 		return jsonResponse, err, mapJsonResponse
 	}
+
+	defer response.Body.Close() // Asegúrate de cerrar el cuerpo de la respuesta
 
 	resBody, err := io.ReadAll(response.Body)
-
 	if err != nil {
 		return jsonResponse, err, mapJsonResponse
 	}
 
+	// Intenta deserializar la respuesta en jsonResponse
 	err = json.Unmarshal(resBody, &jsonResponse)
-
 	if err != nil {
 		err = json.Unmarshal(resBody, &mapJsonResponse)
 		if err != nil {
-
 			return jsonResponse, err, mapJsonResponse
 		}
-
 	}
 
 	return jsonResponse, err, mapJsonResponse
+
 }
 
 func logRequest(logObject map[string]interface{}) {
